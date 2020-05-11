@@ -1,17 +1,31 @@
-const {Machine, interpret} = require('xstate');
+const {Machine, interpret, send, assign} = require('xstate');
 
 const sleeping = {
   on: {
-    ALARM: 'idle'
-  }
+    ALARM: 'idle',
+  },
+  entry: ['logSleep']
 }
 const idle = {
   on: {
     HUNGRY: 'eating',
-    TIRED: 'sleeping',
+    TIRED: {
+      target: 'sleeping',
+      // actions: [(context, event) => {
+      //   console.log(context, event)
+      // }, 'logSleep']
+    },
     BORED: 'playing',
-    STUDY: 'studying'
-  }
+    STUDY: 'studying',
+    SPEAK: 'speaking',
+    COUNT: 'counting',
+    DO_NOTHING: {
+      target: 'idle',
+      internal: true
+    }
+  },
+  entry: [() => console.log('enter idle')],
+  exit: [() => console.log('exit idle')]
 }
 const eating = {
   on: {
@@ -21,42 +35,119 @@ const eating = {
 const studying = {
   on: {
     TIMER: 'idle'
-  }
+  },
+  entry: ['logStudy'],
+  activities: ['studying']
+}
+const speaking = {
+  on: {
+    TIMER: 'idle',
+    SHOUT: {
+      // actions: send('ECHO')
+      actions: send({type: 'ECHO'})
+    },
+    ECHO: {
+      actions: () => console.log('echo, echo')
+    },
+    CHANGE_TONE: {
+      actions: ['changeTone', 'logSpeaking']
+    }
+  },
+  entry: ['logSpeaking']
 }
 const playing = {
   on: {
     TIMER: 'idle'
   }
 }
+const counting = {
+  on: {
+    TIMER: 'idle',
+    COUNT: {
+      actions: [
+        context => console.log(context.prevCount), 
+        // !assign actions are all merged together and batched to the next context in transition()
+        'setPrevCount',
+        'incCount', 
+        context => console.log(context.count)
+      ]
+    }
+  }
+}
 
-const states = {sleeping, idle, eating, studying, playing}
-
-const initial = 'sleeping'
+const context = {
+  tone: 'calming',
+  prevCount: undefined,
+  count: 0
+};
+const states = {sleeping, idle, eating, studying, speaking, playing, counting}
 
 const config = {
-  id: 'Aleah',
-  initial,
+  id: 'Hooman',
+  initial: 'sleeping',
+  context,
   states,
   strict: true
 }
 
-const AleahMachine = Machine(config)
-// console.log(AleahMachine.transition('eating', 'STUDY').value)
-
-const service = interpret(AleahMachine).start();
-
-service.onTransition(state => {
-  if (state.matches('sleeping')) {
-    console.log('zzz')
-    return;
+const fetchMachine = Machine(config, {
+  actions: {
+    logSleep: (context, event) => {
+      console.log(`Zzz sleeping in ${event.location}`);
+    },
+    logStudy: (context, event) => {
+      console.log(`Gonna study now, Focus!`)
+    },
+    logSpeaking: (context, event) => {
+      console.log(`Speaking in ${context.tone} tone`)
+    },
+    changeTone: assign({tone: (context, event) => {
+      let tone = '';
+      switch (context.tone) {
+        case 'angry':
+          tone = 'calming';
+          break;
+        case 'calming':
+          tone = 'angry'
+          break;
+      }
+      return tone;
+    }}),
+    incCount: assign({
+      count: context => context.count + 1
+    }),
+    setPrevCount: assign({
+      prevCount: context => context.count
+    })
+  },
+  activities: {
+    // activity is an ongoing side-effect that takes non-zero amount of time
+    // - this can return a function that does cleanups
+    beeping: (context, event) => {
+      const study = () => {
+        console.log('studying')
+      }
+      // called in closure
+      study();
+      const interval = setInterval(study, 1000) // how do we clean it?
+      return () => clearInterval(interval);
+    }
   }
+});
 
-  if (state.changed) {
-    console.log(state.value);
-  }
-})
+const service = interpret(fetchMachine).start();
 
-service.send('ALARM')
-service.send('HUNGRY')
-service.send('TIMER')
-service.send('TIRED')
+// service.onTransition(state => {
+//   if (state.matches('sleeping')) {
+//     console.log('zzz')
+//     return;
+//   }
+
+//   if (state.changed) {
+//     console.log(state.value);
+//   }
+// })
+
+service.send('ALARM');
+service.send('COUNT');
+service.send('COUNT');
