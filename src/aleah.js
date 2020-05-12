@@ -16,7 +16,7 @@ const idle = {
       // }, 'logSleep']
     },
     BORED: 'playing',
-    STUDY: 'studying',
+    MOTIVATED: 'studying',
     SPEAK: 'speaking',
     COUNT: 'counting',
     DO_NOTHING: {
@@ -34,10 +34,24 @@ const eating = {
 }
 const studying = {
   on: {
-    TIMER: 'idle'
+    DONE: {
+      target: 'finished_studying',
+      cond: 'studiedEnough'
+    },
+    STUDY: {
+      actions: ['study']
+    }
   },
   entry: ['logStudy'],
   activities: ['studying']
+}
+const finished_studying = {
+  on: {
+    REFRESH: {
+      target: 'idle',
+      actions: [assign({studied: context => context.studied = 0})]
+    }
+  }
 }
 const speaking = {
   on: {
@@ -78,9 +92,10 @@ const counting = {
 const context = {
   tone: 'calming',
   prevCount: undefined,
-  count: 0
+  count: 0,
+  studied: 0
 };
-const states = {sleeping, idle, eating, studying, speaking, playing, counting}
+const states = {sleeping, idle, eating, studying, finished_studying, speaking, playing, counting}
 
 const config = {
   id: 'Hooman',
@@ -118,20 +133,26 @@ const fetchMachine = Machine(config, {
     }),
     setPrevCount: assign({
       prevCount: context => context.count
+    }),
+    study: assign({
+      studied: context => context.studied + 1
     })
   },
   activities: {
     // activity is an ongoing side-effect that takes non-zero amount of time
     // - this can return a function that does cleanups
-    beeping: (context, event) => {
+    studying: (context, event) => {
       const study = () => {
-        console.log('studying')
+        console.log('studying...')
       }
       // called in closure
       study();
       const interval = setInterval(study, 1000) // how do we clean it?
       return () => clearInterval(interval);
     }
+  },
+  guards: {
+    studiedEnough: context => context.studied === 5
   }
 });
 
@@ -149,5 +170,4 @@ const service = interpret(fetchMachine).start();
 // })
 
 service.send('ALARM');
-service.send('COUNT');
-service.send('COUNT');
+service.send('STUDY');
